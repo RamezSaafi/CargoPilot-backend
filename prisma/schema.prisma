@@ -1,0 +1,372 @@
+// This is your Prisma schema file.
+// It is the single source of truth for your database schema and TypeScript types.
+
+generator client {
+  provider = "prisma-client-js"
+  seed     = "tsx ./seed.ts"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =================================================================
+// ENUMS
+// =================================================================
+
+enum UserType {
+  SousAdmin
+  Chauffeur
+}
+
+enum Status {
+  Actif
+  Inactif
+}
+
+enum MedicalExamResult {
+  Apte
+  Inapte
+}
+
+enum CardType {
+  gazole
+  peage
+}
+
+enum CardStatus {
+  Active
+  Inactive
+}
+
+enum MissionType {
+  Chargement
+  Dechargement
+  Sous_traitance
+  Decrochage
+  Accrochage
+}
+
+enum ChargementType {
+  Chargement_classique
+  Chargement_frigorifique
+  Chargement_plombe
+}
+
+enum MissionStatus {
+  Programme
+  En_cours
+  Termine
+  Annule
+}
+
+enum EtatVehicule {
+  Bon_etat
+  A_prevoir
+  En_panne
+}
+
+enum MessageStatus {
+  Nouveau
+  Lu
+}
+
+// =================================================================
+// MODELS (These will become your database tables)
+// =================================================================
+
+// --- User & Auth Models ---
+
+model Utilisateur {
+  id        String   @id @unique // IMPORTANT: This will be the UUID from Supabase Auth
+  fullName  String
+  email     String   @unique
+  userType  UserType
+  status    Status   @default(Actif)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  chauffeur Chauffeur?
+  roles     UtilisateurRole[]
+}
+
+model Role {
+  id              Int    @id @default(autoincrement())
+  roleName        String @unique
+  roleDisplayName String
+
+  // Relations
+  users UtilisateurRole[]
+}
+
+model UtilisateurRole {
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  utilisateurId String
+  role          Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        Int
+
+  @@id([utilisateurId, roleId])
+}
+
+// --- Core Entity Models ---
+
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  message   String   @db.Text // Use Text for potentially long messages
+  status    MessageStatus @default(Nouveau)
+  createdAt DateTime @default(now())
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  amount      Decimal
+  category    String   // "Entertainment", "Bill Expense", "Investment", etc.
+  description String?
+  date        DateTime
+  createdAt   DateTime @default(now())
+}
+
+model Client {
+  id                Int      @id @default(autoincrement())
+  companyName       String
+  contactName       String?
+  email             String   @unique
+  phoneNumber       String?
+  address           String?
+  profilePictureUrl String?
+  status            String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  missions Mission[]
+}
+
+model Chauffeur {
+  id                 Int                @id @default(autoincrement())
+  chauffeurCode      String             @unique
+  birthDate          DateTime?
+  address            String?
+  profilePictureUrl  String?
+  licenseNumber      String?
+  licenseCategory    String?
+  licenseIssueDate   DateTime?
+  driverCardValidity DateTime?
+  medicalExamDate    DateTime?
+  medicalExamResult  MedicalExamResult?
+  tachographNumber   String?
+  contractType       String?
+  contractStartDate  DateTime?
+  salaryDetails      String?
+  workHours          String?
+  currentStatus      String?
+  performance        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // One-to-one relation with the auth user
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  utilisateurId String      @unique
+
+  // One-to-many relations
+  vehiculesActuellementAffectes Vehicule[]              @relation("CurrentVehicleAssignment")
+  cartes                        Carte[]
+  documents                     DocumentChauffeur[]
+  formations                    Formation[]
+  incidents                     Incident[]
+  affectations                  HistoriqueAffectation[]
+  missionsAsChauffeurDepart     Mission[]               @relation("ChauffeurDepart")
+  missionsAsChauffeurArrivee    Mission[]               @relation("ChauffeurArrivee")
+}
+
+model Vehicule {
+  id                      Int       @id @default(autoincrement())
+  immatriculation         String    @unique
+  marque                  String?
+  typeVehicule            String?
+  anneeFabrication        Int?
+  dateMiseCirculation     DateTime?
+  kilometrageActuel       Int?
+  nombrePlaces            Int?
+  etatActuel              EtatVehicule?
+  utilisationPrevue       String?
+  remarques               String?
+  photoUrl                String?
+  dateAffectationActuelle DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  // Many-to-one relation (a vehicle can be assigned to one chauffeur)
+  chauffeurActuel   Chauffeur? @relation("CurrentVehicleAssignment", fields: [chauffeurActuelId], references: [id], onDelete: SetNull)
+  chauffeurActuelId Int?
+
+  // One-to-many relations
+  affectations              HistoriqueAffectation[]
+  entretiens                Entretien[]
+  documents                 DocumentVehicule[]
+  incidents                 Incident[]
+  missionsAsVehiculeDepart  Mission[]               @relation("VehiculeDepart")
+  missionsAsVehiculeArrivee Mission[]               @relation("VehiculeArrivee")
+}
+
+model Carte {
+  id             Int        @id @default(autoincrement())
+  cardNumber     String     @unique
+  cardType       CardType
+  expirationDate DateTime?
+  status         CardStatus
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Many-to-one relation
+  chauffeur   Chauffeur? @relation(fields: [chauffeurId], references: [id], onDelete: SetNull)
+  chauffeurId Int?
+}
+
+model Mission {
+  id                       Int             @id @default(autoincrement())
+  missionCode              String          @unique
+  missionType              MissionType
+  chargementType           ChargementType?
+  status                   MissionStatus
+  dateDepart               DateTime?
+  heurePresenceObligatoire String? // Store time as string HH:mm
+  heureDepartEstimee       String?
+  dateArriveeEstimee       DateTime?
+  heureArriveeEstimee      String?
+  lieuDepart               String?
+  lieuArrivee              String?
+  distanceEstimeeKm        Decimal?
+  distanceReelleKm         Decimal?
+  carburantConsommeL       Decimal?
+  dateArriveeReelle        DateTime?
+  performanceNotes         String?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  // Many-to-one relations
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId Int?
+
+  chauffeurDepart   Chauffeur? @relation("ChauffeurDepart", fields: [chauffeurDepartId], references: [id], onDelete: SetNull)
+  chauffeurDepartId Int?
+
+  chauffeurArrivee   Chauffeur? @relation("ChauffeurArrivee", fields: [chauffeurArriveeId], references: [id], onDelete: SetNull)
+  chauffeurArriveeId Int?
+
+  vehiculeDepart   Vehicule? @relation("VehiculeDepart", fields: [vehiculeDepartId], references: [id], onDelete: SetNull)
+  vehiculeDepartId Int?
+
+  vehiculeArrivee   Vehicule? @relation("VehiculeArrivee", fields: [vehiculeArriveeId], references: [id], onDelete: SetNull)
+  vehiculeArriveeId Int?
+
+  // One-to-many relations
+  etapes    EtapeMission[]
+  documents DocumentMission[]
+  incidents Incident[]
+}
+
+// --- Supporting & Historical Models ---
+
+model DocumentChauffeur {
+  id             Int      @id @default(autoincrement())
+  documentType   String
+  fileUrl        String
+  expirationDate DateTime?
+  createdAt      DateTime @default(now())
+
+  // Many-to-one relation
+  chauffeur   Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  chauffeurId Int
+}
+
+model Formation {
+  id            Int       @id @default(autoincrement())
+  formationName String
+  description   String?
+  dateCompleted DateTime?
+
+  // Many-to-one relation
+  chauffeur   Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  chauffeurId Int
+}
+
+model HistoriqueAffectation {
+  id                   Int       @id @default(autoincrement())
+  dateDebutAffectation DateTime
+  dateFinAffectation   DateTime?
+
+  // Many-to-one relations
+  vehicule    Vehicule  @relation(fields: [vehiculeId], references: [id], onDelete: Cascade)
+  vehiculeId  Int
+  chauffeur   Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  chauffeurId Int
+}
+
+model Entretien {
+  id                    Int       @id @default(autoincrement())
+  typeEntretien         String
+  dateEntretien         DateTime
+  dateProchainEntretien DateTime?
+  notes                 String?
+
+  // Many-to-one relation
+  vehicule   Vehicule @relation(fields: [vehiculeId], references: [id], onDelete: Cascade)
+  vehiculeId Int
+}
+
+model DocumentVehicule {
+  id             Int       @id @default(autoincrement())
+  documentType   String
+  fileUrl        String
+  dateExpiration DateTime?
+
+  // Many-to-one relation
+  vehicule   Vehicule @relation(fields: [vehiculeId], references: [id], onDelete: Cascade)
+  vehiculeId Int
+}
+
+model EtapeMission {
+  id           Int       @id @default(autoincrement())
+  ordre        Int
+  lieu         String
+  heureArrivee DateTime?
+  heureDepart  DateTime?
+  observation  String?
+
+  // Many-to-one relation
+  mission   Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  missionId Int
+}
+
+model DocumentMission {
+  id           Int      @id @default(autoincrement())
+  typeDocument String
+  fileUrl      String
+  uploadedAt   DateTime @default(now())
+
+  // Many-to-one relation
+  mission   Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  missionId Int
+}
+
+model Incident {
+  id           Int      @id @default(autoincrement())
+  incidentType String
+  date         DateTime
+  description  String
+  fileUrl      String?
+
+  // Many-to-one relations
+  mission     Mission?  @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  missionId   Int?
+  chauffeur   Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Cascade)
+  chauffeurId Int
+  vehicule    Vehicule? @relation(fields: [vehiculeId], references: [id], onDelete: SetNull)
+  vehiculeId  Int?
+}

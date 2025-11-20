@@ -1,280 +1,241 @@
-// =================================================================
-// This file is the "contract" defining the shape of data from your backend API.
-// It is generated based on the Prisma queries in your NestJS services.
-// =================================================================
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
+import { CreateVehiculeDto } from './dto/create-vehicule.dto';
+import { UpdateVehiculeDto } from './dto/update-vehicule.dto';
+import { CreateEntretienDto } from './dto/create-entretien.dto';
+import { UpdateEntretienDto } from './dto/update-entretien.dto';
+import { QueryDto } from '../common/dto/query.dto';
+import { Prisma } from '@prisma/client';
 
-// --- 1. GENERIC & COMMON TYPES ---
+@Injectable()
+export class VehiculesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
-/** The standard shape for all paginated list responses. */
-export interface PaginatedResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
-}
+  // =================================================================
+  // VEHICULE CRUD
+  // =================================================================
 
-/** The base user profile, returned as a nested object in many responses. */
-export interface Utilisateur {
-  id: string; // UUID from Supabase
-  fullName: string;
-  email: string;
-  userType: 'SousAdmin' | 'Chauffeur';
-  status: 'Actif' | 'Inactif';
-  createdAt: string; // All dates from JSON are strings
-  updatedAt: string;
-}
+  async create(createVehiculeDto: CreateVehiculeDto) {
+    const { chauffeurActuelId, ...vehiculeData } = createVehiculeDto;
 
-// --- 2. MODULE-SPECIFIC "LIST ITEM" TYPES (for table views) ---
+    // We must convert DTO string dates to JavaScript Date objects for Prisma
+    return this.prisma.vehicule.create({
+      data: {
+        ...vehiculeData,
+        dateMiseCirculation: vehiculeData.dateMiseCirculation
+          ? new Date(vehiculeData.dateMiseCirculation)
+          : undefined,
+        dateAffectationActuelle: vehiculeData.dateAffectationActuelle
+          ? new Date(vehiculeData.dateAffectationActuelle)
+          : undefined,
+        // Handle relation: Connect chauffeur if ID is provided
+        chauffeurActuel: chauffeurActuelId
+          ? { connect: { id: chauffeurActuelId } }
+          : undefined,
+      },
+      include: {
+        chauffeurActuel: {
+          include: { utilisateur: true },
+        },
+      },
+    });
+  }
 
-/** Data for a single row in the Chauffeurs list. From ChauffeursService.findAll() */
-export interface ChauffeurListItem {
-  id: number;
-  chauffeurCode: string;
-  createdAt: string;
-  utilisateur: {
-    fullName: string;
-    email: string;
-    status: 'Actif' | 'Inactif';
-  };
-}
+  async findAll(queryDto: QueryDto) {
+    const { search, page, limit } = queryDto;
+    const skip = (page - 1) * limit;
 
-/** Data for a single row in the Clients list. From ClientsService.findAll() */
-export interface ClientListItem {
-  id: number;
-  companyName: string;
-  contactName: string | null;
-  email: string;
-  phoneNumber: string | null;
-  address: string | null;
-  profilePictureUrl: string | null;
-  status: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+    const where: Prisma.VehiculeWhereInput = {};
 
-/** Data for a single row in the Vehicules list. From VehiculesService.findAll() */
-export interface VehiculeListItem {
-  id: number;
-  immatriculation: string;
-  marque: string | null;
-  typeVehicule: string | null;
-  chauffeurActuel: {
-    utilisateur: {
-      fullName: string;
+    if (search) {
+      where.OR = [
+        { immatriculation: { contains: search, mode: 'insensitive' } },
+        { marque: { contains: search, mode: 'insensitive' } },
+        { typeVehicule: { contains: search, mode: 'insensitive' } },
+        // Search by driver name
+        {
+          chauffeurActuel: {
+            utilisateur: { fullName: { contains: search, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+
+    const [vehicules, total] = await this.prisma.$transaction([
+      this.prisma.vehicule.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        // Select only fields needed for 'VehiculeListItem'
+        select: {
+          id: true,
+          immatriculation: true,
+          marque: true,
+          typeVehicule: true,
+          chauffeurActuel: {
+            select: {
+              utilisateur: {
+                select: { fullName: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.vehicule.count({ where }),
+    ]);
+
+    return {
+      data: vehicules,
+      total,
+      page,
+      limit,
     };
-  } | null;
-}
+  }
 
-/** Data for a single row in the Cartes list. From CartesService.findAll() */
-export interface CarteListItem {
-  id: number;
-  cardNumber: string;
-  cardType: 'gazole' | 'peage';
-  status: 'Active' | 'Inactive';
-  expirationDate: string | null;
-  createdAt: string;
-  chauffeur: {
-    utilisateur: {
-      fullName: string;
-    };
-  } | null;
-}
+  async findOne(id: number) {
+    const vehicule = await this.prisma.vehicule.findUnique({
+      where: { id },
+      // Include all relations needed for 'VehiculeDetail'
+      include: {
+        chauffeurActuel: {
+          include: {
+            utilisateur: { select: { fullName: true } },
+          },
+        },
+        affectations: {
+          orderBy: { dateDebutAffectation: 'desc' },
+          include: {
+            chauffeur: {
+              include: {
+                utilisateur: { select: { fullName: true } },
+              },
+            },
+          },
+        },
+        entretiens: {
+          orderBy: { dateEntretien: 'desc' },
+        },
+        documents: true,
+      },
+    });
 
-/** Data for a single row in the Missions list. From MissionsService.findAll() */
-export interface MissionListItem {
-    id: number;
-    missionCode: string;
-    status: 'Programme' | 'En_cours' | 'Termine' | 'Annule';
-    client: { companyName: string } | null;
-    chauffeurDepart: { utilisateur: { fullName: string } } | null;
-    vehiculeDepart: { immatriculation: string; marque: string | null } | null;
-}
+    if (!vehicule) {
+      throw new NotFoundException(`Vehicule with ID ${id} not found.`);
+    }
 
-/** Data for a single row in the Contact Messages list. From ContactService.findAllMessages() */
-export interface ContactMessage {
-    id: number;
-    name: string;
-    email: string;
-    message: string;
-    status: 'Nouveau' | 'Lu';
-    createdAt: string;
-}
+    return vehicule;
+  }
 
-/** Data for a single row in the Users list. From UsersService.findAll() */
-export interface UserListItem extends Utilisateur {}
+  async update(id: number, updateVehiculeDto: UpdateVehiculeDto) {
+    await this.findOne(id); // Ensure existence
 
-/** Data for a single row in the Expenses list. From ExpensesService.findAll() */
-export interface ExpenseListItem {
-  id: number;
-  amount: number; // Prisma Decimal is serialized to number in JSON
-  category: string;
-  description: string | null;
-  date: string;
-  mission: { missionCode: string } | null;
-  vehicule: { immatriculation: string } | null;
-  chauffeur: { utilisateur: { fullName: string } } | null;
-}
+    const { chauffeurActuelId, ...vehiculeData } = updateVehiculeDto;
 
-// --- 3. MODULE-SPECIFIC "DETAIL" TYPES (for detail/edit pages) ---
+    // Logic to handle "chauffeurActuelId":
+    // 1. If it is specifically null, we disconnect.
+    // 2. If it is a number, we connect.
+    // 3. If it is undefined (not sent), we do nothing.
+    const chauffeurRelation =
+      chauffeurActuelId === null
+        ? { disconnect: true }
+        : chauffeurActuelId
+          ? { connect: { id: chauffeurActuelId } }
+          : undefined;
 
-/** Data for the detailed view of a single Chauffeur. From ChauffeursService.findOne() */
-export interface ChauffeurDetail {
-  id: number;
-  chauffeurCode: string;
-  birthDate: string | null;
-  address: string | null;
-  profilePictureUrl: string | null;
-  licenseNumber: string | null;
-  licenseCategory: string | null;
-  licenseIssueDate: string | null;
-  driverCardValidity: string | null;
-  medicalExamDate: string | null;
-  medicalExamResult: 'Apte' | 'Inapte' | null;
-  tachographNumber: string | null;
-  contractType: string | null;
-  contractStartDate: string | null;
-  salaryDetails: string | null;
-  workHours: string | null;
-  currentStatus: string | null;
-  performance: string | null;
-  createdAt: string;
-  updatedAt: string;
-  utilisateurId: string;
-  
-  // Relations from `include`
-  utilisateur: Utilisateur;
-  documents: {
-    id: number;
-    documentType: string;
-    fileUrl: string; // This is the PATH
-    expirationDate: string | null;
-    createdAt: string;
-  }[];
-  formations: {
-    id: number;
-    formationName: string;
-    description: string | null;
-    dateCompleted: string | null;
-  }[];
-  incidents: {
-    id: number;
-    incidentType: string;
-    date: string;
-    description: string;
-  }[];
-  missionsAsChauffeurDepart: {
-    id: number;
-    missionCode: string;
-    status: string;
-  }[];
-  currentVehicle: {
-    id: number;
-    immatriculation: string;
-  } | null;
-}
+    // Logic to Create a History Record (HistoriqueAffectation)
+    // If we are assigning a new driver, we should log it.
+        let createHistoryRelation: Prisma.HistoriqueAffectationUpdateManyWithoutVehiculeNestedInput | undefined;    if (chauffeurActuelId) {
+        createHistoryRelation = {
+            create: {
+                chauffeurId: chauffeurActuelId,
+                dateDebutAffectation: new Date(),
+            }
+        }
+    }
 
-/** Data for the detailed view of a single Client. From ClientsService.findOne() */
-export interface ClientDetail extends ClientListItem {
-  missions: MissionListItem[];
-}
+    return this.prisma.vehicule.update({
+      where: { id },
+      data: {
+        ...vehiculeData,
+        dateMiseCirculation: vehiculeData.dateMiseCirculation
+          ? new Date(vehiculeData.dateMiseCirculation)
+          : undefined,
+        dateAffectationActuelle: vehiculeData.dateAffectationActuelle
+          ? new Date(vehiculeData.dateAffectationActuelle)
+          : undefined,
+        chauffeurActuel: chauffeurRelation,
+        // Optional: Auto-create history log when driver changes
+        affectations: createHistoryRelation
+      },
+    });
+  }
 
-/** Data for the detailed view of a single Vehicule. From VehiculesService.findOne() */
-export interface VehiculeDetail extends VehiculeListItem {
-    anneeFabrication: number | null;
-    dateMiseCirculation: string | null;
-    kilometrageActuel: number | null;
-    nombrePlaces: number | null;
-    utilisationPrevue: string | null;
-    remarques: string | null;
-    photoUrl: string | null;
-    dateAffectationActuelle: string | null;
-    chauffeurActuelId: number | null;
-    
-    affectations: {
-        id: number;
-        dateDebutAffectation: string;
-        dateFinAffectation: string | null;
-        chauffeur: { utilisateur: { fullName: string } };
-    }[];
-    entretiens: {
-        id: number;
-        typeEntretien: string;
-        dateEntretien: string;
-        dateProchainEntretien: string | null;
-    }[];
-    documents: {
-        id: number;
-        documentType: string;
-        fileUrl: string; // This is the PATH
-        dateExpiration: string | null;
-    }[];
-}
+  async uploadPhoto(id: number, file: Express.Multer.File) {
+    await this.findOne(id); // Ensure existence
 
-/** Data for the detailed view of a single Mission. From MissionsService.findOne() */
-export interface MissionDetail extends MissionListItem {
-    chargementType: 'Chargement_classique' | 'Chargement_frigorifique' | 'Chargement_plombe' | null;
-    heurePresenceObligatoire: string | null;
-    heureDepartEstimee: string | null;
-    dateArriveeEstimee: string | null;
-    heureArriveeEstimee: string | null;
-    lieuDepart: string | null;
-    lieuArrivee: string | null;
-    distanceEstimeeKm: number | null;
-    distanceReelleKm: number | null;
-    carburantConsommeL: number | null;
-    dateArriveeReelle: string | null;
-    performanceNotes: string | null;
-    
-    chauffeurArrivee: { utilisateur: { fullName: string } } | null;
-    vehiculeArrivee: { immatriculation: string } | null;
-    etapes: {
-        id: number;
-        ordre: number;
-        lieu: string;
-    }[];
-    documents: {
-        id: number;
-        typeDocument: string;
-        fileUrl: string; // PATH
-    }[];
-}
+    const bucket = 'public-assets'; // Assuming a public bucket for vehicle photos
+    const folderPath = `vehicule-${id}`;
 
-/** Data for the detailed view of a single Carte. From CartesService.findOne() */
-export interface CarteDetail extends CarteListItem {
-  chauffeur: {
-    id: number;
-    chauffeurCode: string;
-    utilisateur: Utilisateur;
-  } | null;
-}
+    // Upload via StorageService
+    const { path } = await this.storageService.upload(file, bucket, folderPath);
+    const publicUrl = this.storageService.getPublicUrl(bucket, path);
 
-/** Data for the detailed view of an Expense. From ExpensesService.findOne() */
-export interface ExpenseDetail extends ExpenseListItem {
-    // includes the same relations, so no extra fields needed unless you change the query
-}
+    // Update DB
+    return this.prisma.vehicule.update({
+      where: { id },
+      data: { photoUrl: publicUrl },
+    });
+  }
 
+  // =================================================================
+  // ENTRETIEN CRUD (Sub-resource)
+  // =================================================================
 
-// --- 4. DASHBOARD & OTHER SPECIAL TYPES ---
+  async addEntretien(vehiculeId: number, createEntretienDto: CreateEntretienDto) {
+    await this.findOne(vehiculeId); // Ensure vehicle exists
 
-/** Data for the main dashboard. From DashboardService.getDashboardAnalytics() */
-export interface DashboardAnalytics {
-  kpis: {
-    missionsEnCours: number;
-    missionsTerminees: number;
-    incidentsSignales: number;
-    moyenneConsommation: number;
-  };
-  missionsGlobales: {
-    date: string;
-    missionsRealisees: number;
-    missionsEnRetard: number;
-  }[];
-  expenseStatistics: {
-    category: string;
-    percentage: number;
-  }[];
-  tempsMoyenMission: {
-    month: string;
-    averageDurationMinutes: number;
-  }[];
+    return this.prisma.entretien.create({
+      data: {
+        ...createEntretienDto,
+        dateEntretien: new Date(createEntretienDto.dateEntretien),
+        dateProchainEntretien: createEntretienDto.dateProchainEntretien
+          ? new Date(createEntretienDto.dateProchainEntretien)
+          : undefined,
+        vehicule: { connect: { id: vehiculeId } },
+      },
+    });
+  }
+
+  async updateEntretien(entretienId: number, updateEntretienDto: UpdateEntretienDto) {
+    // Verify existence
+    const existing = await this.prisma.entretien.findUnique({ where: { id: entretienId } });
+    if (!existing) throw new NotFoundException(`Entretien with ID ${entretienId} not found.`);
+
+    return this.prisma.entretien.update({
+      where: { id: entretienId },
+      data: {
+        ...updateEntretienDto,
+        dateEntretien: updateEntretienDto.dateEntretien
+          ? new Date(updateEntretienDto.dateEntretien)
+          : undefined,
+        dateProchainEntretien: updateEntretienDto.dateProchainEntretien
+          ? new Date(updateEntretienDto.dateProchainEntretien)
+          : undefined,
+      },
+    });
+  }
+
+  async removeEntretien(entretienId: number) {
+    const existing = await this.prisma.entretien.findUnique({ where: { id: entretienId } });
+    if (!existing) throw new NotFoundException(`Entretien with ID ${entretienId} not found.`);
+
+    return this.prisma.entretien.delete({
+      where: { id: entretienId },
+    });
+  }
 }

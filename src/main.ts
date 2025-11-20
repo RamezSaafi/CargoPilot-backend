@@ -9,6 +9,11 @@ import { ConfigService } from '@nestjs/config'; // <-- Import ConfigService
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: ['http://localhost:3000', 'http://localhost:3001'], // Allow your frontend
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
   // --- START of WebSocket Adapter Configuration ---
 
   // 1. Get the ConfigService from the fully initialized app

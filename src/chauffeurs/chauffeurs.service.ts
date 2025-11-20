@@ -222,4 +222,11 @@ export class ChauffeursService {
       },
     });
   }
+
+  async remove(id: number) {
+    await this.findOne(id); // Ensure the client exists
+    return this.prisma.chauffeur.delete({
+      where: { id },
+    });
+  }
 }

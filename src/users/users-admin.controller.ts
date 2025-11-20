@@ -6,6 +6,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserType, Utilisateur } from '@prisma/client';
+import { UpdateUserDto } from './dto/update-user.dto';
 // ... (imports remain the same)
 import { ChangePasswordDto } from './dto/update-my-password.dto'; // <-- Import the renamed DTO
 
@@ -22,9 +23,19 @@ export class UsersAdminController {
     return this.usersService.findAll();
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.usersService.findOne(id);
+  }
+
   @Post('sous-admin')
   createSousAdmin(@Body(new ValidationPipe()) createSousAdminDto: CreateSousAdminDto) {
     return this.usersService.createSousAdmin(createSousAdminDto);
+  }
+
+   @Patch(':id')
+  update(@Param('id') id: string, @Body(new ValidationPipe()) updateUserDto: UpdateUserDto) {
+    return this.usersService.update(id, updateUserDto);
   }
 
   @Patch(':id/status')

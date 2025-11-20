@@ -5,6 +5,7 @@ import { CreateSousAdminDto } from './dto/create-sous-admin.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { ChangePasswordDto } from './dto/update-my-password.dto';
 import { Status, Utilisateur } from '@prisma/client';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -13,6 +14,16 @@ export class UsersService {
     @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabaseAdmin: SupabaseClient,
   ) {}
 
+  async findOne(id: string) {
+    const user = await this.prisma.utilisateur.findUnique({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found.`);
+    }
+    return user;
+  }
   /**
    * Finds all users for the admin list view.
    */
@@ -51,6 +62,18 @@ export class UsersService {
     }
   }
 
+  async update(id: string, updateUserDto: UpdateUserDto) {
+    // Ensure user exists
+    await this.findOne(id);
+
+    return this.prisma.utilisateur.update({
+      where: { id },
+      data: {
+        fullName: updateUserDto.fullName,
+      },
+    });
+  }
+  
   /**
    * Updates a user's status (Actif/Inactif).
    */

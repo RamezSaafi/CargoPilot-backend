@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Get, UseGuards, Param, ValidationPipe, Query, UseInterceptors, UploadedFile  } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Get, UseGuards, Param, ValidationPipe, Query, UseInterceptors, UploadedFile, Delete  } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ChauffeursService } from './chauffeurs.service';
 import { CreateChauffeurDto } from './dto/create-chauffeur.dto';
@@ -99,4 +99,10 @@ addIncident(
 getDocumentUrl(@Param('docId') docId: string) {
     return this.chauffeursService.getDocumentUrl(+docId);
 }
+
+@Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.chauffeursService.remove(+id);
+  }
+
 }

@@ -154,16 +154,22 @@ export class ChauffeursService {
   // =================================================================
 
   async uploadProfilePicture(chauffeurId: number, file: Express.Multer.File) {
-    const chauffeur = await this.findOne(chauffeurId);
-    const bucket = 'profile-pictures';
-    const folderPath = `chauffeur-${chauffeur.id}`;
-    const { path } = await this.storageService.upload(file, bucket, folderPath);
-    const publicUrl = this.storageService.getPublicUrl(bucket, path);
-    return this.prisma.chauffeur.update({
-      where: { id: chauffeurId },
-      data: { profilePictureUrl: publicUrl },
-    });
-  }
+  const chauffeur = await this.findOne(chauffeurId);
+  
+  const bucket = 'profile-pictures';
+  // We can still name the folder based on chauffeur ID for organization, 
+  // or switch to user ID. Let's keep it consistent with the user ID now.
+  const folderPath = `user-${chauffeur.utilisateurId}`; 
+
+  const { path } = await this.storageService.upload(file, bucket, folderPath);
+  const publicUrl = this.storageService.getPublicUrl(bucket, path);
+
+  // FIX: Update the UTILISATEUR model, not the Chauffeur model
+  return this.prisma.utilisateur.update({
+    where: { id: chauffeur.utilisateurId },
+    data: { profilePictureUrl: publicUrl },
+  });
+}
 
   async uploadDocument(chauffeurId: number, file: Express.Multer.File, documentType: string, expirationDate?: string) {
     await this.findOne(chauffeurId);

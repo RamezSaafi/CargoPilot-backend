@@ -6,12 +6,14 @@ import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { ChangePasswordDto } from './dto/update-my-password.dto';
 import { Status, Utilisateur } from '@prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabaseAdmin: SupabaseClient,
+    private readonly storageService: StorageService,
   ) {}
 
   async findOne(id: string) {
@@ -138,5 +140,23 @@ export class UsersService {
     }
 
     return { message: 'Password updated successfully.' };
+  }
+
+   async uploadProfilePicture(userId: string, file: Express.Multer.File) {
+    // 1. Ensure user exists
+    await this.findOne(userId);
+
+    const bucket = 'profile-pictures';
+    const folderPath = `admin-${userId}`;
+
+    // 2. Upload to Supabase Storage
+    const { path } = await this.storageService.upload(file, bucket, folderPath);
+    const publicUrl = this.storageService.getPublicUrl(bucket, path);
+
+    // 3. Update Database
+    return this.prisma.utilisateur.update({
+      where: { id: userId },
+      data: { profilePictureUrl: publicUrl },
+    });
   }
 }

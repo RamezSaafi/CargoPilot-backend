@@ -7,7 +7,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserType, Utilisateur } from '@prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
-// ... (imports remain the same)
+import { UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ChangePasswordDto } from './dto/update-my-password.dto'; // <-- Import the renamed DTO
 
 @Controller('admin/users')
@@ -56,5 +57,15 @@ export class UsersAdminController {
   ) {
     const loggedInUser: Utilisateur = req.user; // `req.user` was attached by AuthGuard
     return this.usersService.updateMyPassword(loggedInUser, updateMyPasswordDto);
+  }
+
+  @Patch('me/upload-picture')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadProfilePicture(
+    @Request() req,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const loggedInUser: Utilisateur = req.user;
+    return this.usersService.uploadProfilePicture(loggedInUser.id, file);
   }
 }
